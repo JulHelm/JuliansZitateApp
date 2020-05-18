@@ -10,8 +10,30 @@ import {
   Text,
 } from "react-native"; // {} weil mehreres importiert wird
 // APIs und Komponenten und eigene Komponenten
+import Firebase from "./js/Firebase";
 import Quote from "./js/components/Quote";
 import NewQuote from "./js/components/NewQuote";
+
+// Bugfix für "Can't find variable: atob":
+import { decode, encode } from "base-64";
+if (!global.btoa) {
+  global.btoa = encode;
+}
+if (!global.atob) {
+  global.atob = decode;
+}
+
+// Bugfix für YellowBox "Setting a timer ..."
+import { YellowBox } from "react-native";
+import _ from "lodash";
+
+YellowBox.ignoreWarnings(["Setting a timer"]);
+const _console = _.clone(console);
+console.warn = (message) => {
+  if (message.indexOf("Setting a timer") <= -1) {
+    _console.warn(message);
+  }
+};
 
 function StyledButton(props) {
   let button = null;
@@ -33,15 +55,35 @@ export default class App extends Component {
   };
 
   _retrieveData = async () => {
-    let value = await AsyncStorage.getItem("QUOTES");
+    let quotes = [];
+    let query = await Firebase.db.collection("quotes").get();
+    query.forEach((quote) => {
+      quotes.push({
+        id: quote.id,
+        text: quote.data().text,
+        author: quote.data().author,
+      });
+    });
+    this.setState({ quotes, isLoading: false });
+  };
+  /*  let value = await AsyncStorage.getItem("QUOTES");
     if (value !== null) {
       value = JSON.parse(value);
       this.setState({ quote: value });
-    }
-  };
+    } */
 
+  /*  
   _storeData(quotes) {
     AsyncStorage.setItem("QUOTES", JSON.stringify(quotes)); //json.stringity macht aus array string
+  } */
+
+  _saveQuoteToDB = async (text, author, quotes) => {
+    docRef = await Firebase.db.collection("quotes").add({ text, author });
+    quotes[quotes.length - 1].id = docRef.id;
+  };
+
+  _removeQuoteFromDB(id) {
+    Firebase.db.collection("quotes").doc(id).delete();
   }
 
   _addQuote = (text, author) => {
@@ -49,7 +91,7 @@ export default class App extends Component {
     let { quotes } = this.state;
     if (text !== null && author !== null) {
       quotes.push({ text: text, author: author });
-      this._storeData(quotes);
+      this._saveQuoteToDB(text, author, quotes);
     }
     this.setState({
       index: quotes.length - 1,
@@ -85,15 +127,13 @@ export default class App extends Component {
 
   _deleteQuote() {
     let { index, quotes } = this.state;
+    this._removeQuoteFromDB(quotes[index].id);
     quotes.splice(index, 1);
-    this._storeData(quotes);
-    this.setState({
-      index: 0,
-      quotes,
-    });
+    this.setState({ index: 0, quotes });
   }
 
   componentDidMount() {
+    Firebase.init();
     this._retrieveData();
   }
 
